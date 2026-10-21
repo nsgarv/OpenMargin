@@ -14,6 +14,13 @@ struct AgendaItem: Identifiable, Equatable {
         if isNow { return "Now" }
         return start.formatted(date: .omitted, time: .shortened)
     }
+
+    var rangeLabel: String {
+        let startText = start.formatted(date: .omitted, time: .shortened)
+        let endText = end.formatted(date: .omitted, time: .shortened)
+        if isNow { return "Now · \(startText) – \(endText)" }
+        return "\(startText) – \(endText)"
+    }
 }
 
 @MainActor
@@ -54,7 +61,7 @@ final class CalendarAgenda {
         guard access == .granted else { return }
         let now = Date()
         let windowStart = now.addingTimeInterval(-30 * 60)
-        let windowEnd = now.addingTimeInterval(12 * 60 * 60)
+        let windowEnd = now.addingTimeInterval(14 * 24 * 60 * 60)
         let predicate = store.predicateForEvents(withStart: windowStart, end: windowEnd, calendars: nil)
         var seen = Set<String>()
         events = store.events(matching: predicate)
@@ -74,6 +81,9 @@ final class CalendarAgenda {
                 )
             }
             .sorted { $0.start < $1.start }
+        if events.count > 40 {
+            events = Array(events.prefix(40))
+        }
     }
 
     private func requestAccess() async -> Bool {

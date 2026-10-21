@@ -40,6 +40,8 @@
 	<string>OpenMargin reads the meetings already on this Mac so you can open a note for the one you are in.</string>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>OpenMargin looks at the front browser tab to notice Google Meet, Zoom, or Teams. It does not read other pages.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>OpenMargin shows people from Contacts so you can invite them. Contacts stay on this Mac.</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 </dict>

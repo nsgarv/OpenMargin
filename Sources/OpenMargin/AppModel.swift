@@ -21,6 +21,7 @@ final class AppModel {
 
     let agenda = CalendarAgenda()
     let apps = MeetingApps()
+    let workspace = Workspace()
 
     var meetings: [Meeting]
     var selectedID: UUID?
@@ -45,16 +46,8 @@ final class AppModel {
 
     init(store: MeetingStore = .live()) {
         self.store = store
-        let loaded = store.load().sorted { $0.createdAt > $1.createdAt }
-        if loaded.isEmpty {
-            let meeting = Meeting.new()
-            meetings = [meeting]
-            selectedID = meeting.id
-            try? store.save(meetings)
-        } else {
-            meetings = loaded
-            selectedID = loaded.first?.id
-        }
+        meetings = store.load().sorted { $0.createdAt > $1.createdAt }
+        selectedID = nil
     }
 
     func beginWatching() {
@@ -115,6 +108,12 @@ final class AppModel {
 
     func openAgendaItem(_ item: AgendaItem) {
         selectAgendaItem(item)
+        showMainWindow()
+    }
+
+    func openLiveCall() {
+        guard let live = apps.live else { return }
+        selectLiveCall(live)
         showMainWindow()
     }
 

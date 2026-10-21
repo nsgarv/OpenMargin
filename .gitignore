@@ -4,3 +4,6 @@ OpenMargin.app
 .DS_Store
 .env
 xai-api-key
+google-client-id
+account.json
+teammates.json

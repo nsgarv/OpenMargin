@@ -17,6 +17,7 @@ struct OpenMarginApp: App {
                         NSApp.applicationIconImage = image
                     }
                     model.beginWatching()
+                    Self.bringWindowOnScreen()
                 }
         }
         .defaultSize(width: 1140, height: 760)
@@ -45,6 +46,26 @@ struct OpenMarginApp: App {
 
         Settings {
             SettingsView()
+                .environment(model)
+        }
+    }
+
+    /// A restored frame can sit above the displays. Pull it back only when it is actually off screen.
+    private static func bringWindowOnScreen() {
+        DispatchQueue.main.async {
+            guard let window = NSApp.windows.first(where: { $0.canBecomeMain }) else { return }
+            let frame = window.frame
+            let visible = NSScreen.screens.contains { screen in
+                let overlap = screen.visibleFrame.intersection(frame)
+                return overlap.width > 120 && overlap.height > 120
+            }
+            guard !visible, let screen = NSScreen.main ?? NSScreen.screens.first else { return }
+            var next = frame
+            next.size.width = min(next.width, screen.visibleFrame.width - 48)
+            next.size.height = min(next.height, screen.visibleFrame.height - 48)
+            next.origin.x = screen.visibleFrame.midX - next.width / 2
+            next.origin.y = screen.visibleFrame.midY - next.height / 2
+            window.setFrame(next, display: true)
         }
     }
 }

@@ -208,6 +208,14 @@ final class NoteExportTests: XCTestCase {
     }
 }
 
+final class InviteListTests: XCTestCase {
+    func testAcceptsAnEmailAndIgnoresTheRest() {
+        XCTAssertEqual(InviteList.adding(" Ada@Example.com, nope ", to: []), ["ada@example.com"])
+        XCTAssertEqual(InviteList.adding("ada@example.com bob@example.com", to: ["ada@example.com"]), ["ada@example.com", "bob@example.com"])
+        XCTAssertNil(InviteList.normalize("not an email"))
+    }
+}
+
 final class StartOffersTests: XCTestCase {
     func testListeningSuppressesTheOffer() {
         let event = StartCandidate.event(id: "e1", title: "Planning")

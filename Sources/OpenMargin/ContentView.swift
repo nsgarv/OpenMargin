@@ -11,6 +11,7 @@ struct ContentView: View {
         @Bindable var model = model
         NavigationSplitView {
             sidebar
+                .navigationSplitViewColumnWidth(min: 228, ideal: 248, max: 300)
         } detail: {
             VStack(spacing: 0) {
                 if let offer = model.startOffer {
@@ -20,12 +21,13 @@ struct ContentView: View {
                     MeetingPane(meetingID: id)
                         .id(id)
                 } else {
-                    empty
+                    HomeView()
                 }
             }
         }
         .navigationSplitViewStyle(.balanced)
-        .navigationTitle("OpenMargin")
+        .toolbar(removing: .title)
+        .tint(Ink.copper)
         .background(Ink.paper)
         .confirmationDialog(
             "Delete this meeting?",
@@ -46,11 +48,13 @@ struct ContentView: View {
     private var sidebar: some View {
         @Bindable var model = model
         return VStack(spacing: 0) {
-            HStack {
+            HStack(spacing: 8) {
                 Text("OpenMargin")
-                    .font(.system(size: 18, weight: .semibold, design: .serif))
+                    .font(.system(size: 16, weight: .semibold, design: .serif))
                     .foregroundStyle(Ink.sidebarText)
-                Spacer()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                Spacer(minLength: 4)
                 Button {
                     model.newMeeting()
                 } label: {
@@ -62,7 +66,25 @@ struct ContentView: View {
             }
             .padding(.horizontal, 16)
             .padding(.top, 16)
-            .padding(.bottom, 10)
+            .padding(.bottom, 8)
+
+            Button {
+                model.selectedID = nil
+            } label: {
+                Label("Home", systemImage: "house")
+                    .font(.system(size: 13, weight: .medium))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(
+                        model.selectedID == nil ? Color.white.opacity(0.08) : Color.clear,
+                        in: RoundedRectangle(cornerRadius: 6)
+                    )
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Ink.sidebarText)
+            .padding(.horizontal, 10)
+            .padding(.bottom, 8)
 
             calendarSection
                 .padding(.horizontal, 12)
@@ -105,11 +127,23 @@ struct ContentView: View {
             .listStyle(.sidebar)
             .scrollContentBackground(.hidden)
 
-            Text("Notes stay on this Mac.")
-                .font(.caption2)
-                .foregroundStyle(Ink.sidebarText.opacity(0.45))
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(16)
+            VStack(alignment: .leading, spacing: 2) {
+                if let account = model.workspace.account {
+                    Text(account.name)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(Ink.sidebarText)
+                        .lineLimit(1)
+                    Text(account.email)
+                        .font(.caption2)
+                        .foregroundStyle(Ink.sidebarText.opacity(0.55))
+                        .lineLimit(1)
+                }
+                Text("Notes stay on this Mac.")
+                    .font(.caption2)
+                    .foregroundStyle(Ink.sidebarText.opacity(0.45))
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(16)
         }
         .background(Ink.sidebar)
     }
@@ -162,19 +196,25 @@ struct ContentView: View {
 
     @ViewBuilder
     private var calendarSection: some View {
-        if !model.agenda.events.isEmpty || model.apps.live != nil {
+        let happening = model.agenda.events.filter(\.isNow)
+        if !happening.isEmpty || model.apps.live != nil {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Now")
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(Ink.sidebarText.opacity(0.45))
                     .padding(.horizontal, 4)
                 if let live = model.apps.live {
-                    Label("\(live.name) is open", systemImage: "video")
-                        .font(.caption)
-                        .foregroundStyle(Ink.sidebarText.opacity(0.8))
-                        .padding(.horizontal, 4)
+                    Button {
+                        model.openLiveCall()
+                    } label: {
+                        Label("\(live.name) is open", systemImage: "video")
+                            .font(.caption)
+                            .foregroundStyle(Ink.sidebarText.opacity(0.8))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 4)
                 }
-                ForEach(Array(model.agenda.events.prefix(4))) { event in
+                ForEach(happening) { event in
                     Button {
                         model.openAgendaItem(event)
                     } label: {
@@ -200,16 +240,6 @@ struct ContentView: View {
                 .padding(.horizontal, 4)
         }
     }
-
-    private var empty: some View {
-        VStack(spacing: 12) {
-            Text("No meeting")
-                .font(.system(size: 22, weight: .semibold, design: .serif))
-            Button("New meeting") { model.newMeeting() }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Ink.paper)
-    }
 }
 
 private struct MeetingPane: View {
@@ -234,11 +264,15 @@ private struct MeetingPane: View {
                         .padding(.vertical, 8)
                         .background(Ink.paperDeep)
                 }
-                HSplitView {
+                if showsTranscript(meeting) {
+                    HSplitView {
+                        noteColumn(meeting)
+                            .frame(minWidth: 380)
+                        transcriptColumn(meeting)
+                            .frame(minWidth: 240, idealWidth: 300, maxWidth: 420)
+                    }
+                } else {
                     noteColumn(meeting)
-                        .frame(minWidth: 380)
-                    transcriptColumn(meeting)
-                        .frame(minWidth: 260, idealWidth: 340)
                 }
             }
             .background(Ink.paper)
@@ -248,64 +282,76 @@ private struct MeetingPane: View {
         }
     }
 
+    private func showsTranscript(_ meeting: Meeting) -> Bool {
+        model.phase != .idle || !meeting.transcript.isEmpty
+    }
+
     private func toolbar(_ meeting: Meeting) -> some View {
-        HStack(spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             TextField("Title", text: titleBinding)
                 .textFieldStyle(.plain)
-                .font(.system(size: 20, weight: .semibold, design: .serif))
+                .font(.system(size: 26, weight: .semibold, design: .serif))
                 .foregroundStyle(Ink.ink)
 
-            Spacer(minLength: 12)
-
-            Picker("Template", selection: templateBinding) {
-                ForEach(NoteTemplate.allCases, id: \.self) { template in
-                    Text(template.label).tag(template)
+            HStack(spacing: 8) {
+                Picker("Template", selection: templateBinding) {
+                    ForEach(NoteTemplate.allCases, id: \.self) { template in
+                        Text(template.label).tag(template)
+                    }
                 }
-            }
-            .pickerStyle(.menu)
-            .labelsHidden()
-            .help("How Enhance shapes the note")
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .fixedSize()
+                .help("How Enhance shapes the note")
 
-            if let link = meeting.joinURL.flatMap(URL.init(string:)) {
-                Button("Join") {
-                    NSWorkspace.shared.open(link)
+                if let link = meeting.joinURL.flatMap(URL.init(string:)) {
+                    Button("Join") { NSWorkspace.shared.open(link) }
+                        .help(link.absoluteString)
                 }
-                .help(link.absoluteString)
-            }
 
-            Picker("Capture", selection: captureBinding) {
-                ForEach(CaptureMode.allCases, id: \.self) { mode in
-                    Text(mode.label).tag(mode)
+                Picker("Capture", selection: captureBinding) {
+                    ForEach(CaptureMode.allCases, id: \.self) { mode in
+                        Text(mode.label).tag(mode)
+                    }
                 }
-            }
-            .pickerStyle(.segmented)
-            .frame(width: 210)
-            .disabled(model.phase != .idle)
-            .labelsHidden()
+                .pickerStyle(.segmented)
+                .frame(width: 200)
+                .disabled(model.phase != .idle)
+                .labelsHidden()
 
-            Button {
-                model.toggleListening()
-            } label: {
-                Label(listenTitle, systemImage: model.phase == .listening ? "stop.fill" : "waveform")
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(model.phase == .listening ? Color.red : Ink.copper)
-            .disabled(model.phase == .stopping)
+                Spacer(minLength: 8)
 
-            Button {
-                model.enhance()
-            } label: {
-                if model.enhancing {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Text("Enhance")
+                Button("Export") { model.exportSelected() }
+                Button("Email") { model.emailSelected() }
+                if meeting.enhancedNote != nil {
+                    Button("Copy") { copyEnhanced(meeting) }
                 }
+
+                Button {
+                    model.enhance()
+                } label: {
+                    if model.enhancing {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Text("Enhance")
+                    }
+                }
+                .disabled(model.enhancing)
+                .help("Sends the note and transcript to xAI. Audio stays here.")
+
+                Button {
+                    model.toggleListening()
+                } label: {
+                    Label(listenTitle, systemImage: model.phase == .listening ? "stop.fill" : "waveform")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(model.phase == .listening ? Color.red : Ink.copper)
+                .disabled(model.phase == .stopping)
             }
-            .disabled(model.enhancing)
-            .help("Sends the note and transcript to xAI. Audio stays here.")
         }
-        .padding(.horizontal, 22)
-        .padding(.vertical, 14)
+        .padding(.horizontal, 28)
+        .padding(.top, 18)
+        .padding(.bottom, 12)
         .background(Ink.paper)
     }
 
@@ -320,29 +366,17 @@ private struct MeetingPane: View {
 
     private func noteColumn(_ meeting: Meeting) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                if meeting.enhancedNote != nil {
-                    Picker("Note", selection: $mode) {
-                        Text("Rough").tag(NoteMode.rough)
-                        Text("Enhanced").tag(NoteMode.enhanced)
-                    }
-                    .pickerStyle(.segmented)
-                    .frame(width: 220)
-                    .labelsHidden()
+            if meeting.enhancedNote != nil {
+                Picker("Note", selection: $mode) {
+                    Text("Rough").tag(NoteMode.rough)
+                    Text("Enhanced").tag(NoteMode.enhanced)
                 }
-                Spacer()
-                Button("Export") { model.exportSelected() }
-                    .buttonStyle(.borderless)
-                Button("Email") { model.emailSelected() }
-                    .buttonStyle(.borderless)
-                if mode == .enhanced, meeting.enhancedNote != nil {
-                    Button("Copy") { copyEnhanced(meeting) }
-                        .buttonStyle(.borderless)
-                }
+                .pickerStyle(.segmented)
+                .frame(width: 200)
+                .labelsHidden()
+                .padding(.horizontal, 28)
+                .padding(.bottom, 8)
             }
-            .padding(.horizontal, 22)
-            .padding(.top, 8)
-            .padding(.bottom, 4)
 
             if mode == .enhanced, let enhanced = meeting.enhancedNote {
                 ScrollView {
