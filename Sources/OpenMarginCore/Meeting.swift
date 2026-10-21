@@ -52,6 +52,8 @@ public struct Meeting: Identifiable, Codable, Equatable, Sendable {
     public var transcript: [TranscriptLine]
     public var calendarEventID: String?
     public var joinURL: String?
+    /// Nil means general, including notes saved before templates existed.
+    public var template: NoteTemplate?
 
     public init(
         id: UUID,
@@ -62,7 +64,8 @@ public struct Meeting: Identifiable, Codable, Equatable, Sendable {
         enhancedNote: String?,
         transcript: [TranscriptLine],
         calendarEventID: String? = nil,
-        joinURL: String? = nil
+        joinURL: String? = nil,
+        template: NoteTemplate? = nil
     ) {
         self.id = id
         self.title = title
@@ -73,6 +76,7 @@ public struct Meeting: Identifiable, Codable, Equatable, Sendable {
         self.transcript = transcript
         self.calendarEventID = calendarEventID
         self.joinURL = joinURL
+        self.template = template
     }
 
     public static func new(now: Date = .now) -> Meeting {

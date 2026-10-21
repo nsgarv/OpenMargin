@@ -11,6 +11,9 @@ struct LiveCall: Equatable {
 @Observable
 final class MeetingApps {
     var live: LiveCall?
+    /// A native meeting app that is running, even when a browser tab is the better guess.
+    var native: LiveCall?
+    var onUpdate: (@MainActor () -> Void)?
     private var observers: [NSObjectProtocol] = []
     private var automationBlocked = false
 
@@ -34,7 +37,8 @@ final class MeetingApps {
     }
 
     func refresh() async {
-        let native = Self.runningNative()
+        let nativeApp = Self.runningNative()
+        native = nativeApp
         if let front = NSWorkspace.shared.frontmostApplication,
            let bundleID = front.bundleIdentifier,
            let script = Self.browserScripts[bundleID],
@@ -42,9 +46,10 @@ final class MeetingApps {
            let url = tabURL(script: script),
            let name = MeetingLink.name(for: url) {
             live = LiveCall(name: name, joinURL: url)
-            return
+        } else {
+            live = nativeApp
         }
-        live = native
+        onUpdate?()
     }
 
     private static let nativeApps = [

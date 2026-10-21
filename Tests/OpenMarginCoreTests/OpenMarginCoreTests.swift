@@ -103,6 +103,18 @@ final class NoteEnhancerTests: XCTestCase {
         let body = try JSONSerialization.jsonObject(with: NoteEnhancer.requestBody(for: meeting)) as? [String: Any]
         XCTAssertEqual(body?["model"] as? String, "grok-4.7")
     }
+
+    func testTemplateChangesTheSections() {
+        var meeting = Meeting.new(now: Date(timeIntervalSince1970: 1_700_000_000))
+        meeting.rawNotes = "They need a clearer roadmap."
+        let general = NoteEnhancer.prompt(for: meeting)
+        XCTAssertTrue(general.contains("# Summary, # Decisions, # Action items, # Notes."))
+
+        meeting.template = .oneOnOne
+        let oneOnOne = NoteEnhancer.prompt(for: meeting)
+        XCTAssertTrue(oneOnOne.contains("# What they need, # What you committed, # Follow-ups, # Notes."))
+        XCTAssertFalse(oneOnOne.contains("# Summary, # Decisions"))
+    }
 }
 
 final class MeetingLinkTests: XCTestCase {
@@ -131,6 +143,7 @@ final class MeetingStoreTests: XCTestCase {
         let loaded = store.load()
         XCTAssertEqual(loaded.first?.title, "Old")
         XCTAssertNil(loaded.first?.joinURL)
+        XCTAssertNil(loaded.first?.template)
     }
 
     func testRoundTrip() throws {
@@ -139,8 +152,88 @@ final class MeetingStoreTests: XCTestCase {
         var meeting = Meeting.new(now: Date(timeIntervalSince1970: 1_700_000_000))
         meeting.title = "Standup"
         meeting.rawNotes = "Ship the margin."
+        meeting.template = .standup
         try store.save([meeting])
         let loaded = store.load()
         XCTAssertEqual(loaded, [meeting])
+    }
+}
+
+final class NoteTemplateTests: XCTestCase {
+    func testGuessesFromACalendarTitleWithoutMatchingAClockTime() {
+        XCTAssertEqual(NoteTemplate.guess(from: "Weekly 1:1"), .oneOnOne)
+        XCTAssertEqual(NoteTemplate.guess(from: "Stand-up"), .standup)
+        XCTAssertEqual(NoteTemplate.guess(from: "Product demo"), .sales)
+        XCTAssertEqual(NoteTemplate.guess(from: "Interview with Sam"), .interview)
+        XCTAssertNil(NoteTemplate.guess(from: "11:15 Planning"))
+        XCTAssertNil(NoteTemplate.guess(from: "Planning"))
+    }
+}
+
+final class MeetingSearchTests: XCTestCase {
+    func testEveryWordMustMatchAndVolatileLinesDoNotCount() {
+        var meeting = Meeting.new(now: Date(timeIntervalSince1970: 1_700_000_000))
+        meeting.title = "Pricing"
+        meeting.rawNotes = "Hold the price"
+        meeting.enhancedNote = "[[added]]May is fine.[[/added]]"
+        meeting.transcript = [
+            TranscriptLine(id: UUID(), speaker: .speakers, text: "wait until May", isFinal: true, at: meeting.createdAt),
+            TranscriptLine(id: UUID(), speaker: .me, text: "secret volatile", isFinal: false, at: meeting.createdAt)
+        ]
+        let hits = MeetingSearch.hits(in: [meeting], query: "price May")
+        XCTAssertEqual(hits.map(\.meetingID), [meeting.id])
+        XCTAssertFalse(hits[0].snippet.localizedCaseInsensitiveContains("secret"))
+        XCTAssertTrue(MeetingSearch.hits(in: [meeting], query: "price secret").isEmpty)
+    }
+}
+
+final class NoteExportTests: XCTestCase {
+    func testDocumentUsesTheFinishedNoteAndStripsModelMarkers() {
+        var meeting = Meeting.new(now: Date(timeIntervalSince1970: 1_700_000_000))
+        meeting.title = "Q3 / Pricing"
+        meeting.rawNotes = "Hold the price."
+        meeting.enhancedNote = "# Decisions\nShip Friday.\n[[added]]Alex agreed.[[/added]]"
+        meeting.transcript = [
+            TranscriptLine(id: UUID(), speaker: .speakers, text: "Friday works", isFinal: true, at: meeting.createdAt)
+        ]
+        let document = NoteExport.document(for: meeting)
+        XCTAssertTrue(document.hasPrefix("# Q3 / Pricing\n"))
+        XCTAssertTrue(document.contains("Alex agreed."))
+        XCTAssertTrue(document.contains("- [Speakers] Friday works"))
+        XCTAssertFalse(document.contains("[[added]]"))
+        XCTAssertFalse(document.contains("[[/added]]"))
+        XCTAssertFalse(document.contains("Hold the price."))
+        XCTAssertEqual(NoteExport.filename(for: meeting), "Q3 - Pricing.md")
+        XCTAssertEqual(NoteExport.subject(for: meeting), "Q3 / Pricing")
+    }
+}
+
+final class StartOffersTests: XCTestCase {
+    func testListeningSuppressesTheOffer() {
+        let event = StartCandidate.event(id: "e1", title: "Planning")
+        XCTAssertNil(StartOffers.next(listening: true, handled: [], happeningNow: event, liveApp: nil))
+    }
+
+    func testAHandledEventDoesNotFallThroughToTheApp() {
+        let event = StartCandidate.event(id: "e1", title: "Planning")
+        let live = StartCandidate.live(name: "Zoom")
+        XCTAssertNil(StartOffers.next(listening: false, handled: ["e1"], happeningNow: event, liveApp: live))
+    }
+
+    func testTheCalendarEventBeatsTheLiveApp() {
+        let event = StartCandidate.event(id: "e1", title: "Planning")
+        let live = StartCandidate.live(name: "Zoom")
+        XCTAssertEqual(
+            StartOffers.next(listening: false, handled: [], happeningNow: event, liveApp: live)?.id,
+            "e1"
+        )
+    }
+
+    func testALiveAppIsOfferedWhenNothingIsHappening() {
+        let live = StartCandidate.live(name: "Zoom")
+        XCTAssertEqual(
+            StartOffers.next(listening: false, handled: [], happeningNow: nil, liveApp: live)?.id,
+            "live:Zoom"
+        )
     }
 }

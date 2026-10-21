@@ -5,17 +5,23 @@ import SwiftUI
 struct ContentView: View {
     @Environment(AppModel.self) private var model
     @State private var pendingDelete: UUID?
+    @State private var query = ""
 
     var body: some View {
         @Bindable var model = model
         NavigationSplitView {
             sidebar
         } detail: {
-            if let id = model.selectedID {
-                MeetingPane(meetingID: id)
-                    .id(id)
-            } else {
-                empty
+            VStack(spacing: 0) {
+                if let offer = model.startOffer {
+                    startBanner(offer)
+                }
+                if let id = model.selectedID {
+                    MeetingPane(meetingID: id)
+                        .id(id)
+                } else {
+                    empty
+                }
             }
         }
         .navigationSplitViewStyle(.balanced)
@@ -62,21 +68,37 @@ struct ContentView: View {
                 .padding(.horizontal, 12)
                 .padding(.bottom, 8)
 
+            TextField("Search", text: $query, prompt: Text("Search").foregroundStyle(Ink.sidebarText.opacity(0.45)))
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+                .foregroundStyle(Ink.sidebarText)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+                .padding(.horizontal, 12)
+                .padding(.bottom, 8)
+
             List(selection: $model.selectedID) {
-                ForEach(model.meetings) { meeting in
+                if filtering && rows.isEmpty {
+                    Text("No matches")
+                        .font(.caption)
+                        .foregroundStyle(Ink.sidebarText.opacity(0.55))
+                }
+                ForEach(rows) { row in
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(meeting.title.isEmpty ? "Untitled" : meeting.title)
+                        Text(row.title)
                             .font(.system(size: 13, weight: .medium))
                             .foregroundStyle(Ink.sidebarText)
                             .lineLimit(1)
-                        Text(MeetingDate.sidebar(meeting.createdAt))
+                        Text(row.subtitle)
                             .font(.caption)
                             .foregroundStyle(Ink.sidebarText.opacity(0.55))
+                            .lineLimit(2)
                     }
                     .padding(.vertical, 4)
-                    .tag(meeting.id)
+                    .tag(row.id)
                     .contextMenu {
-                        Button("Delete", role: .destructive) { pendingDelete = meeting.id }
+                        Button("Delete", role: .destructive) { pendingDelete = row.id }
                     }
                 }
             }
@@ -90,6 +112,52 @@ struct ContentView: View {
                 .padding(16)
         }
         .background(Ink.sidebar)
+    }
+
+    private var filtering: Bool {
+        !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var rows: [SidebarRow] {
+        if filtering {
+            return MeetingSearch.hits(in: model.meetings, query: query).map { hit in
+                let meeting = model.meetings.first { $0.id == hit.meetingID }
+                let title = meeting?.title ?? ""
+                return SidebarRow(
+                    id: hit.meetingID,
+                    title: title.isEmpty ? "Untitled" : title,
+                    subtitle: hit.snippet
+                )
+            }
+        }
+        return model.meetings.map { meeting in
+            SidebarRow(
+                id: meeting.id,
+                title: meeting.title.isEmpty ? "Untitled" : meeting.title,
+                subtitle: MeetingDate.sidebar(meeting.createdAt)
+            )
+        }
+    }
+
+    private func startBanner(_ offer: StartCandidate) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(offer.promptTitle)
+                    .font(.system(size: 14, weight: .semibold, design: .serif))
+                    .foregroundStyle(Ink.ink)
+                Text("Listen? Tell the other people if you do.")
+                    .font(.caption)
+                    .foregroundStyle(Ink.inkSoft)
+            }
+            Spacer(minLength: 8)
+            Button("Not now") { model.dismissStartOffer() }
+            Button("Listen") { model.acceptStartOffer() }
+                .buttonStyle(.borderedProminent)
+                .tint(Ink.copper)
+        }
+        .padding(.horizontal, 22)
+        .padding(.vertical, 10)
+        .background(Ink.paperDeep)
     }
 
     @ViewBuilder
@@ -189,6 +257,15 @@ private struct MeetingPane: View {
 
             Spacer(minLength: 12)
 
+            Picker("Template", selection: templateBinding) {
+                ForEach(NoteTemplate.allCases, id: \.self) { template in
+                    Text(template.label).tag(template)
+                }
+            }
+            .pickerStyle(.menu)
+            .labelsHidden()
+            .help("How Enhance shapes the note")
+
             if let link = meeting.joinURL.flatMap(URL.init(string:)) {
                 Button("Join") {
                     NSWorkspace.shared.open(link)
@@ -254,6 +331,10 @@ private struct MeetingPane: View {
                     .labelsHidden()
                 }
                 Spacer()
+                Button("Export") { model.exportSelected() }
+                    .buttonStyle(.borderless)
+                Button("Email") { model.emailSelected() }
+                    .buttonStyle(.borderless)
                 if mode == .enhanced, meeting.enhancedNote != nil {
                     Button("Copy") { copyEnhanced(meeting) }
                         .buttonStyle(.borderless)
@@ -384,6 +465,13 @@ private struct MeetingPane: View {
         )
     }
 
+    private var templateBinding: Binding<NoteTemplate> {
+        Binding(
+            get: { meeting?.template ?? .general },
+            set: { model.setTemplate($0) }
+        )
+    }
+
     private func rendered(_ source: String) -> AttributedString {
         var result = AttributedString()
         for block in EnhancedNote.parse(source) {
@@ -418,6 +506,12 @@ private struct MeetingPane: View {
 private enum NoteMode: Hashable {
     case rough
     case enhanced
+}
+
+private struct SidebarRow: Identifiable {
+    var id: UUID
+    var title: String
+    var subtitle: String
 }
 
 private struct LevelMeter: View {

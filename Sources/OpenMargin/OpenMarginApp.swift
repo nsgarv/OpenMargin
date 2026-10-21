@@ -33,6 +33,12 @@ struct OpenMarginApp: App {
                 Button("Enhance Notes") { model.enhance() }
                     .keyboardShortcut("e", modifiers: [.command, .shift])
                     .disabled(model.enhancing || model.selectedID == nil)
+                Divider()
+                Button("Export Note…") { model.exportSelected() }
+                    .keyboardShortcut("s", modifiers: [.command, .shift])
+                    .disabled(model.selectedID == nil)
+                Button("Email Note") { model.emailSelected() }
+                    .disabled(model.selectedID == nil)
             }
         }
 

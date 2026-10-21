@@ -10,6 +10,7 @@ public enum NoteEnhancer {
         let notes = clipped(meeting.rawNotes.trimmingCharacters(in: .whitespacesAndNewlines), limit: notesLimit)
         let transcript = clipped(transcriptText(meeting), limit: transcriptLimit)
         let when = meeting.createdAt.formatted(date: .abbreviated, time: .shortened)
+        let shape = (meeting.template ?? .general).instructions
         return """
         You turn rough meeting notes plus a transcript into a finished note.
 
@@ -19,7 +20,7 @@ public enum NoteEnhancer {
         - Write plain text. A heading line starts with "# ". Separate paragraphs with a blank line.
         - Wrap every sentence the user did not already write in [[added]] and [[/added]]. Do not wrap their words.
         - If the transcript disagrees with a rough note, keep their note and add a short [[added]] line with what the transcript says.
-        - When the rough notes have no headings, use only the sections that have something in them: # Summary, # Decisions, # Action items, # Notes.
+        - \(shape)
         - You means the person who took the notes. Speakers means everyone else on the call. Room means one microphone heard everyone in the room.
 
         Title: \(meeting.title)

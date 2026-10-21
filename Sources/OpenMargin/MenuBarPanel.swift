@@ -8,6 +8,28 @@ struct MenuBarPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            if let offer = model.startOffer {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(offer.promptTitle)
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(Ink.ink)
+                        .lineLimit(2)
+                    Text("Listen to this meeting?")
+                        .font(.caption)
+                        .foregroundStyle(Ink.inkSoft)
+                    HStack {
+                        Button("Not now") { model.dismissStartOffer() }
+                        Spacer()
+                        Button("Listen") {
+                            model.acceptStartOffer()
+                            openWindow(id: "main")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Ink.copper)
+                    }
+                }
+            }
+
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(model.listening ? "Listening" : "OpenMargin")

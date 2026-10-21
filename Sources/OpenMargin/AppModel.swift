@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import Observation
 import OpenMarginCore
+import UniformTypeIdentifiers
 
 @MainActor
 @Observable
@@ -29,6 +30,11 @@ final class AppModel {
     var speakersLevel: Float = 0
     var enhancing = false
     var enhancedTick = 0
+    var startOffer: StartCandidate?
+    private var handledOffers: Set<String> = []
+    /// Native app already running at launch. A resident Zoom process is not a meeting starting.
+    private var capturedLiveBaseline = false
+    private var liveBaselineID: String?
 
     var selected: Meeting? {
         guard let selectedID else { return nil }
@@ -53,16 +59,40 @@ final class AppModel {
 
     func beginWatching() {
         guard watchTask == nil else { return }
+        let bridge = NotificationBridge.shared
+        bridge.install()
+        bridge.onListen = { [weak self] id in
+            self?.acceptOffer(id: id)
+        }
+        bridge.onDismiss = { [weak self] id in
+            self?.dismissOffer(id: id)
+        }
+        apps.onUpdate = { [weak self] in
+            self?.noteLiveSample()
+            self?.considerStartPrompt()
+        }
         apps.start()
         watchTask = Task { [weak self] in
             guard let self else { return }
             await self.agenda.prepare()
+            self.considerStartPrompt()
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(20))
                 self.agenda.refresh()
                 await self.apps.refresh()
+                self.considerStartPrompt()
             }
         }
+    }
+
+    func acceptStartOffer() {
+        guard let id = startOffer?.id else { return }
+        acceptOffer(id: id)
+    }
+
+    func dismissStartOffer() {
+        guard let id = startOffer?.id else { return }
+        dismissOffer(id: id)
     }
 
     func listenToCurrent() {
@@ -131,6 +161,10 @@ final class AppModel {
         mutate { $0.captureMode = mode }
     }
 
+    func setTemplate(_ template: NoteTemplate) {
+        mutate { $0.template = template }
+    }
+
     func setEnhanced(_ text: String) {
         mutate { $0.enhancedNote = text }
     }
@@ -145,6 +179,7 @@ final class AppModel {
 
     func startListening() {
         guard phase == .idle, let meeting = selected else { return }
+        markCurrentContextHandled()
         phase = .preparing
         status = "Preparing…"
         youLevel = 0
@@ -200,6 +235,7 @@ final class AppModel {
             self.speakersLevel = 0
             self.status = nil
             self.save()
+            self.considerStartPrompt()
         }
     }
 
@@ -230,6 +266,40 @@ final class AppModel {
         }
     }
 
+    func exportSelected() {
+        guard let meeting = selected else { return }
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        panel.allowedContentTypes = [UTType(filenameExtension: "md") ?? .plainText]
+        panel.nameFieldStringValue = NoteExport.filename(for: meeting)
+        panel.begin { [weak self] result in
+            guard result == .OK, let url = panel.url else { return }
+            do {
+                try NoteExport.document(for: meeting).write(to: url, atomically: true, encoding: .utf8)
+            } catch {
+                Task { @MainActor in
+                    self?.status = "Couldn't export. \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    func emailSelected() {
+        guard let meeting = selected else { return }
+        let body = NoteExport.document(for: meeting)
+        guard let service = NSSharingService(named: .composeEmail) else {
+            status = "Mail isn't available on this Mac."
+            return
+        }
+        service.subject = NoteExport.subject(for: meeting)
+        guard service.canPerform(withItems: [body]) else {
+            status = "Mail isn't available on this Mac."
+            return
+        }
+        service.perform(withItems: [body])
+    }
+
     private func selectAgendaItem(_ item: AgendaItem) {
         if let existing = meetings.first(where: { $0.calendarEventID == item.id }) {
             selectedID = existing.id
@@ -243,6 +313,7 @@ final class AppModel {
         meeting.calendarEventID = item.id
         meeting.joinURL = item.joinURL?.absoluteString
         meeting.captureMode = .call
+        meeting.template = NoteTemplate.guess(from: item.title)
         meetings.insert(meeting, at: 0)
         selectedID = meeting.id
         save()
@@ -293,6 +364,99 @@ final class AppModel {
 
     private func save() {
         try? store.save(meetings)
+    }
+
+    private func noteLiveSample() {
+        let nativeID = apps.native.map { StartCandidate.live(name: $0.name).id }
+        if !capturedLiveBaseline {
+            capturedLiveBaseline = true
+            liveBaselineID = nativeID
+            return
+        }
+        if nativeID != liveBaselineID {
+            liveBaselineID = nil
+        }
+    }
+
+    /// A meeting link is a real meeting. A native app with no link is ignored until it launches after we started.
+    private func liveForPrompt() -> StartCandidate? {
+        guard let live = apps.live else { return nil }
+        let candidate = StartCandidate.live(name: live.name)
+        if live.joinURL == nil, candidate.id == liveBaselineID {
+            return nil
+        }
+        return candidate
+    }
+
+    private func considerStartPrompt() {
+        let happening = agenda.events.first(where: \.isNow).map {
+            StartCandidate.event(id: $0.id, title: $0.title)
+        }
+        let next = StartOffers.next(
+            listening: listening,
+            handled: handledOffers,
+            happeningNow: happening,
+            liveApp: liveForPrompt()
+        )
+        guard startOffer?.id != next?.id else { return }
+        if let previous = startOffer {
+            NotificationBridge.shared.withdraw(previous.id)
+        }
+        startOffer = next
+        if let next {
+            NotificationBridge.shared.post(next)
+        }
+    }
+
+    private func acceptOffer(id: String) {
+        handledOffers.insert(id)
+        NotificationBridge.shared.withdraw(id)
+        let candidate = currentCandidate()
+        if startOffer?.id == id {
+            startOffer = nil
+        }
+        guard phase == .idle, candidate?.id == id else { return }
+        if candidate?.kind == .liveApp {
+            if let live = apps.live {
+                selectLiveCall(live)
+            }
+        } else if let item = agenda.events.first(where: { $0.id == id }) {
+            selectAgendaItem(item)
+        }
+        showMainWindow()
+        startListening()
+    }
+
+    private func dismissOffer(id: String) {
+        handledOffers.insert(id)
+        NotificationBridge.shared.withdraw(id)
+        if startOffer?.id == id {
+            startOffer = nil
+        }
+    }
+
+    private func currentCandidate() -> StartCandidate? {
+        if let now = agenda.events.first(where: \.isNow) {
+            return StartCandidate.event(id: now.id, title: now.title)
+        }
+        if let live = apps.live {
+            return StartCandidate.live(name: live.name)
+        }
+        return nil
+    }
+
+    private func markCurrentContextHandled() {
+        if let now = agenda.events.first(where: \.isNow) {
+            handledOffers.insert(now.id)
+        }
+        if let live = apps.live {
+            handledOffers.insert(StartCandidate.live(name: live.name).id)
+        }
+        if let offer = startOffer {
+            handledOffers.insert(offer.id)
+            NotificationBridge.shared.withdraw(offer.id)
+            startOffer = nil
+        }
     }
 }
 
