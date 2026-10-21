@@ -9,6 +9,7 @@ struct OpenMarginApp: App {
         Window("OpenMargin", id: "main") {
             ContentView()
                 .environment(model)
+                .background { MenuBarInstaller(model: model) }
                 .frame(minWidth: 920, minHeight: 600)
                 .task {
                     if let url = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
@@ -45,14 +46,5 @@ struct OpenMarginApp: App {
         Settings {
             SettingsView()
         }
-
-        MenuBarExtra {
-            MenuBarPanel()
-                .environment(model)
-        } label: {
-            Image(nsImage: MenuBarIcon.image(listening: model.listening))
-                .renderingMode(.template)
-        }
-        .menuBarExtraStyle(.window)
     }
 }
