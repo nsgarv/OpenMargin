@@ -105,7 +105,34 @@ final class NoteEnhancerTests: XCTestCase {
     }
 }
 
+final class MeetingLinkTests: XCTestCase {
+    func testRecognizesMeetingHosts() {
+        XCTAssertEqual(MeetingLink.name(for: URL(string: "https://meet.google.com/abc-defg-hij")!), "Google Meet")
+        XCTAssertEqual(MeetingLink.name(for: URL(string: "https://us05web.zoom.us/j/123")!), "Zoom")
+        XCTAssertEqual(MeetingLink.name(for: URL(string: "https://teams.microsoft.com/l/meetup-join/x")!), "Teams")
+        XCTAssertNil(MeetingLink.name(for: URL(string: "https://example.com")!))
+    }
+
+    func testFindsAMeetingLinkInsideNotes() {
+        let text = "See you there https://company.webex.com/meet/alex and bring the doc."
+        XCTAssertEqual(MeetingLink.firstMeetingURL(in: text)?.host, "company.webex.com")
+    }
+}
+
 final class MeetingStoreTests: XCTestCase {
+    func testLoadsMeetingsSavedBeforeCalendarFields() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let store = MeetingStore(directory: directory)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let json = """
+        {"meetings":[{"captureMode":"call","createdAt":"2026-01-01T00:00:00Z","enhancedNote":null,"id":"11111111-1111-1111-1111-111111111111","rawNotes":"hi","title":"Old","transcript":[]}],"version":1}
+        """
+        try Data(json.utf8).write(to: store.fileURL)
+        let loaded = store.load()
+        XCTAssertEqual(loaded.first?.title, "Old")
+        XCTAssertNil(loaded.first?.joinURL)
+    }
+
     func testRoundTrip() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let store = MeetingStore(directory: directory)

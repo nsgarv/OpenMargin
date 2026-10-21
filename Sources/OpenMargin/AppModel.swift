@@ -16,6 +16,10 @@ final class AppModel {
     private let store: MeetingStore
     private let session = CaptureSession()
     private var captureTask: Task<Void, Never>?
+    private var watchTask: Task<Void, Never>?
+
+    let agenda = CalendarAgenda()
+    let apps = MeetingApps()
 
     var meetings: [Meeting]
     var selectedID: UUID?
@@ -44,6 +48,51 @@ final class AppModel {
         } else {
             meetings = loaded
             selectedID = loaded.first?.id
+        }
+    }
+
+    func beginWatching() {
+        guard watchTask == nil else { return }
+        apps.start()
+        watchTask = Task { [weak self] in
+            guard let self else { return }
+            await self.agenda.prepare()
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(20))
+                self.agenda.refresh()
+                await self.apps.refresh()
+            }
+        }
+    }
+
+    func listenToCurrent() {
+        if phase == .listening || phase == .preparing {
+            stopListening()
+            return
+        }
+        if let now = agenda.events.first(where: \.isNow), selected?.calendarEventID != now.id {
+            selectAgendaItem(now)
+        } else if selected == nil {
+            if let live = apps.live {
+                selectLiveCall(live)
+            } else {
+                newMeeting()
+            }
+        }
+        showMainWindow()
+        startListening()
+    }
+
+    func openAgendaItem(_ item: AgendaItem) {
+        selectAgendaItem(item)
+        showMainWindow()
+    }
+
+    func showMainWindow() {
+        NSApp.activate(ignoringOtherApps: true)
+        for window in NSApp.windows where window.canBecomeMain {
+            window.makeKeyAndOrderFront(nil)
+            return
         }
     }
 
@@ -179,6 +228,44 @@ final class AppModel {
             }
             self.enhancing = false
         }
+    }
+
+    private func selectAgendaItem(_ item: AgendaItem) {
+        if let existing = meetings.first(where: { $0.calendarEventID == item.id }) {
+            selectedID = existing.id
+            if existing.joinURL == nil, let url = item.joinURL {
+                mutate(id: existing.id) { $0.joinURL = url.absoluteString }
+            }
+            return
+        }
+        var meeting = Meeting.new(now: item.start)
+        meeting.title = item.title
+        meeting.calendarEventID = item.id
+        meeting.joinURL = item.joinURL?.absoluteString
+        meeting.captureMode = .call
+        meetings.insert(meeting, at: 0)
+        selectedID = meeting.id
+        save()
+    }
+
+    private func selectLiveCall(_ live: LiveCall) {
+        let recent = meetings.first { meeting in
+            meeting.title == live.name && Date().timeIntervalSince(meeting.createdAt) < 3 * 60 * 60
+        }
+        if let recent {
+            selectedID = recent.id
+            if recent.joinURL == nil, let url = live.joinURL {
+                mutate(id: recent.id) { $0.joinURL = url.absoluteString }
+            }
+            return
+        }
+        var meeting = Meeting.new()
+        meeting.title = live.name
+        meeting.joinURL = live.joinURL?.absoluteString
+        meeting.captureMode = .call
+        meetings.insert(meeting, at: 0)
+        selectedID = meeting.id
+        save()
     }
 
     private func ingest(speaker: Speaker, text: String, isFinal: Bool) {

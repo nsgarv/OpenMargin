@@ -58,6 +58,10 @@ struct ContentView: View {
             .padding(.top, 16)
             .padding(.bottom, 10)
 
+            calendarSection
+                .padding(.horizontal, 12)
+                .padding(.bottom, 8)
+
             List(selection: $model.selectedID) {
                 ForEach(model.meetings) { meeting in
                     VStack(alignment: .leading, spacing: 3) {
@@ -86,6 +90,47 @@ struct ContentView: View {
                 .padding(16)
         }
         .background(Ink.sidebar)
+    }
+
+    @ViewBuilder
+    private var calendarSection: some View {
+        if !model.agenda.events.isEmpty || model.apps.live != nil {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Now")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(Ink.sidebarText.opacity(0.45))
+                    .padding(.horizontal, 4)
+                if let live = model.apps.live {
+                    Label("\(live.name) is open", systemImage: "video")
+                        .font(.caption)
+                        .foregroundStyle(Ink.sidebarText.opacity(0.8))
+                        .padding(.horizontal, 4)
+                }
+                ForEach(Array(model.agenda.events.prefix(4))) { event in
+                    Button {
+                        model.openAgendaItem(event)
+                    } label: {
+                        HStack(spacing: 8) {
+                            Text(event.timeLabel)
+                                .font(.caption2.monospacedDigit())
+                                .foregroundStyle(Ink.copper)
+                                .frame(width: 46, alignment: .leading)
+                            Text(event.title)
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(Ink.sidebarText)
+                                .lineLimit(1)
+                            Spacer(minLength: 0)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        } else if case .denied = model.agenda.access {
+            Text("Calendar access is off.")
+                .font(.caption2)
+                .foregroundStyle(Ink.sidebarText.opacity(0.45))
+                .padding(.horizontal, 4)
+        }
     }
 
     private var empty: some View {
@@ -143,6 +188,13 @@ private struct MeetingPane: View {
                 .foregroundStyle(Ink.ink)
 
             Spacer(minLength: 12)
+
+            if let link = meeting.joinURL.flatMap(URL.init(string:)) {
+                Button("Join") {
+                    NSWorkspace.shared.open(link)
+                }
+                .help(link.absoluteString)
+            }
 
             Picker("Capture", selection: captureBinding) {
                 ForEach(CaptureMode.allCases, id: \.self) { mode in

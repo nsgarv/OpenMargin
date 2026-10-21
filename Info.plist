@@ -34,5 +34,13 @@
 	<string>OpenMargin transcribes the meeting on this Mac so it can enhance your notes.</string>
 	<key>NSAudioCaptureUsageDescription</key>
 	<string>OpenMargin listens to other people through your computer audio. It does not record the screen, save audio, or join the call.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>OpenMargin reads the meetings already on this Mac so you can open a note for the one you are in.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>OpenMargin reads the meetings already on this Mac so you can open a note for the one you are in.</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>OpenMargin looks at the front browser tab to notice Google Meet, Zoom, or Teams. It does not read other pages.</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 </dict>
 </plist>

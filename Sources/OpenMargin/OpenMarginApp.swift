@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 @main
@@ -5,10 +6,17 @@ struct OpenMarginApp: App {
     @State private var model = AppModel()
 
     var body: some Scene {
-        WindowGroup("OpenMargin") {
+        Window("OpenMargin", id: "main") {
             ContentView()
                 .environment(model)
                 .frame(minWidth: 920, minHeight: 600)
+                .task {
+                    if let url = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
+                       let image = NSImage(contentsOf: url) {
+                        NSApp.applicationIconImage = image
+                    }
+                    model.beginWatching()
+                }
         }
         .defaultSize(width: 1140, height: 760)
         .commands {
@@ -31,5 +39,14 @@ struct OpenMarginApp: App {
         Settings {
             SettingsView()
         }
+
+        MenuBarExtra {
+            MenuBarPanel()
+                .environment(model)
+        } label: {
+            Image(nsImage: MenuBarIcon.image(listening: model.listening))
+                .renderingMode(.template)
+        }
+        .menuBarExtraStyle(.window)
     }
 }

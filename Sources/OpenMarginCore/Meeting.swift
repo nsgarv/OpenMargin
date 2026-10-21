@@ -50,6 +50,8 @@ public struct Meeting: Identifiable, Codable, Equatable, Sendable {
     public var rawNotes: String
     public var enhancedNote: String?
     public var transcript: [TranscriptLine]
+    public var calendarEventID: String?
+    public var joinURL: String?
 
     public init(
         id: UUID,
@@ -58,7 +60,9 @@ public struct Meeting: Identifiable, Codable, Equatable, Sendable {
         captureMode: CaptureMode,
         rawNotes: String,
         enhancedNote: String?,
-        transcript: [TranscriptLine]
+        transcript: [TranscriptLine],
+        calendarEventID: String? = nil,
+        joinURL: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -67,6 +71,8 @@ public struct Meeting: Identifiable, Codable, Equatable, Sendable {
         self.rawNotes = rawNotes
         self.enhancedNote = enhancedNote
         self.transcript = transcript
+        self.calendarEventID = calendarEventID
+        self.joinURL = joinURL
     }
 
     public static func new(now: Date = .now) -> Meeting {
