@@ -1,0 +1,6 @@
+.build/
+.swiftpm/
+OpenMargin.app
+.DS_Store
+.env
+xai-api-key
